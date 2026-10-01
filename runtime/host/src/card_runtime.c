@@ -50,9 +50,20 @@ static bool resolve_card_path(const char* explicit_path) {
     const char* home = getenv("HOME");
     if (home == NULL || home[0] == '\0')
         return false;
+#if defined(__linux__)
+    /* XDG state dir (~/.local/share/BlueWake); $XDG_DATA_HOME is honored. */
+    const char* data_home = getenv("XDG_DATA_HOME");
+    if (data_home != NULL && data_home[0] == '/')
+        return snprintf(g_card_path, sizeof g_card_path,
+                        "%s/BlueWake/GZLE01.card", data_home) < (int)sizeof g_card_path;
+    return snprintf(g_card_path, sizeof g_card_path,
+                    "%s/.local/share/BlueWake/GZLE01.card",
+                    home) < (int)sizeof g_card_path;
+#else
     return snprintf(g_card_path, sizeof g_card_path,
                     "%s/Library/Application Support/BlueWake/GZLE01.card",
                     home) < (int)sizeof g_card_path;
+#endif
 }
 
 bool bluewake_card_runtime_open(const char* explicit_path) {

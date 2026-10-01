@@ -1,0 +1,37 @@
+name: Linux build
+
+on: [push, pull_request]
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Fetch pinned RecompCore (GXRuntime and the vendored Aurora fork)
+        run: |
+          mkdir -p ref
+          git init -q ref/recompcore
+          git -C ref/recompcore remote add origin https://github.com/elliotttate/RecompCore.git
+          git -C ref/recompcore fetch --depth 1 origin 8ab24daee9c641634fda5cac30389ad4b2cfda5e
+          git -C ref/recompcore checkout -q --detach FETCH_HEAD
+          # Linux-only compile fix not in the pinned fork yet; see
+          # patches/recompcore/README.md. Drop this line once the companion
+          # RecompCore pull request lands and the pin is bumped.
+          git -C ref/recompcore apply "$GITHUB_WORKSPACE/patches/recompcore/0113-aurora-vertex-buffer-layout-designators-in-header-order.patch"
+
+      # Aurora's providers fetch the pinned prebuilt Dawn (linux-x86_64) and
+      # build SDL3 from source; no game data is involved anywhere.
+      - name: Configure
+        run: cmake -S runtime/host -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build/linux -j"$(nproc)"
+
+      - name: Test
+        run: |
+          cmake --build build/linux --target gx_fifo_tests render_worker_tests os_alloc_tests gxcore_viewport_tests -j"$(nproc)"
+          ctest --test-dir build/linux --output-on-failure

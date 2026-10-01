@@ -97,7 +97,7 @@ for d in dst.glob("chunks_mod_*"):
     shutil.rmtree(d)
 for d in src.glob("chunks_mod_*"):
     shutil.copytree(d, dst / d.name)
-for f in ("generated_composite.h", "mod_variants.inc"):
+for f in ("generated_composite.h", "mod_tables.inc", "mod_variants.inc"):
     shutil.copy2(src / f, dst / f)
 PYEOF
 echo "build_mods: done; rebuild the composite: cmake $B/composite-ios && ninja -C $B/composite-ios"

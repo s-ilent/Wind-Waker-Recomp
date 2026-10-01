@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# BlueWake Builder: turn your own game disc into your own app, on your Mac.
+# BlueWake Builder: turn your own game disc into your own app, on your Mac or
+# Linux PC.
 #
 #   scripts/builder/build.sh DISC.iso [--ipa OUT.ipa] [options]
 #
@@ -47,7 +48,6 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
 
 iso="" game=bluewake out="" ipa=""
-jobs=$(sysctl -n hw.ncpu)
 identity="" profile="" install_device="" host_pgo=""
 train_pgo=auto training_save=""
 composite_pgo=()
@@ -57,6 +57,21 @@ device_cpu=apple-a13 opt_level=2 mods=1 accept_new=0 source_only=0 use_pgo=1
 
 die() { echo "builder: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
+
+case "$(uname -s)" in
+    Darwin) os=Darwin; jobs=$(sysctl -n hw.ncpu) ;;
+    Linux)  os=Linux;  jobs=$(nproc) ;;
+    *) die "unsupported operating system: $(uname -s) (macOS and Linux are supported)" ;;
+esac
+
+# sha-256 of a file, or of stdin; macOS has shasum, Linux has sha256sum
+if command -v shasum >/dev/null 2>&1; then
+    sha256_file() { shasum -a 256 "$@" | awk '{print $1}'; }
+    sha256_stdin() { shasum -a 256 | awk '{print $1}'; }
+else
+    sha256_file() { sha256sum "$@" | awk '{print $1}'; }
+    sha256_stdin() { sha256sum | awk '{print $1}'; }
+fi
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -122,6 +137,9 @@ case "$out" in
     "$root"/*) git check-ignore -q "$out/" || die "--out inside this checkout must be git-ignored; use build/device" ;;
     *) echo "builder: using external private build directory $out" ;;
 esac
+if [ "$os" != Darwin ] && [ -n "$ipa$identity$profile$install_device" ]; then
+    die "--ipa/--identity/--profile/--install are Apple platform options"
+fi
 if [ -n "$identity" ] && [ -z "$profile" ]; then die "--identity needs --profile"; fi
 if [ -n "$install_device" ] && [ -z "$identity" ]; then die "--install needs --identity and --profile"; fi
 for f in ${composite_pgo[@]+"${composite_pgo[@]}"} "$host_pgo" "$profile" "$training_save"; do
@@ -166,10 +184,18 @@ run() {  # run LOGNAME command...: periodic progress plus complete file log
 echo "Building $PROFILE_TITLE from $iso"
 
 step "1/9 tools"
-for tool in xcrun cmake ninja python3 git curl shasum clang codesign ditto; do
-    command -v "$tool" >/dev/null || die "missing $tool (Xcode, CMake 3.25+ and Ninja are required; brew install cmake ninja)"
-done
-xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1 || die "the iOS SDK is missing: install Xcode and run sudo xcode-select -s /Applications/Xcode.app"
+if [ "$os" = Darwin ]; then
+    for tool in xcrun cmake ninja python3 git curl shasum clang codesign ditto; do
+        command -v "$tool" >/dev/null || die "missing $tool (Xcode, CMake 3.25+ and Ninja are required; brew install cmake ninja)"
+    done
+    xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1 || die "the iOS SDK is missing: install Xcode and run sudo xcode-select -s /Applications/Xcode.app"
+else
+    for tool in cmake ninja python3 git curl; do
+        command -v "$tool" >/dev/null || die "missing $tool (CMake 3.25+, Ninja and a C/C++ compiler are required; see docs/LINUX.md)"
+    done
+    command -v cc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 || \
+        die "no C compiler found (install cc or clang; see docs/LINUX.md)"
+fi
 cmake_version=$(cmake --version | head -1 | awk '{print $3}')
 python3 - "$cmake_version" <<'EOF' || die "CMake 3.25 or newer is required"
 import sys
@@ -177,7 +203,11 @@ v = tuple(int(x) for x in sys.argv[1].split('.')[:2])
 sys.exit(0 if v >= (3, 25) else 1)
 EOF
 profile_check_tools
-echo "xcode $(xcodebuild -version | head -1 | awk '{print $2}'), cmake $cmake_version, $jobs jobs"
+if [ "$os" = Darwin ]; then
+    echo "xcode $(xcodebuild -version | head -1 | awk '{print $2}'), cmake $cmake_version, $jobs jobs"
+else
+    echo "linux $(uname -r), cmake $cmake_version, $jobs jobs"
+fi
 
 step "2/9 dependencies"
 profile_dependencies
@@ -218,40 +248,42 @@ echo "game module built in $(( ($(date +%s) - start) / 60 )) min: $module"
 step "8/9 build, embed and sign the app"
 app=""
 profile_build_app
-[ -d "$app" ] || die "the app was not produced"
-mkdir -p "$app/Frameworks"
-cp "$module" "$app/Frameworks/$PROFILE_MODULE"
-if [ -n "$identity" ]; then
-    cp "$profile" "$app/embedded.mobileprovision"
-    security cms -D -i "$profile" > "$out/profile.plist"
-    /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$out/profile.plist" > "$out/entitlements.plist"
-    app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$out/profile.plist")
-    case "$app_id" in *".$PROFILE_BUNDLE_ID"|*".*") ;; *) die "the profile is for $app_id, not $PROFILE_BUNDLE_ID" ;; esac
-    run sign-module codesign -f -s "$identity" "$app/Frameworks/$PROFILE_MODULE"
-    run sign-app codesign -f -s "$identity" --entitlements "$out/entitlements.plist" "$app"
-    signed="with $identity"
-else
-    rm -f "$app/embedded.mobileprovision"
-    run sign-module codesign -f -s - "$app/Frameworks/$PROFILE_MODULE"
-    run sign-app codesign -f -s - "$app"
-    signed="ad hoc"
-fi
-run sign-verify codesign -v --strict "$app"
+module_hash=$(sha256_file "$module")
+if [ "$os" = Darwin ]; then
+    [ -d "$app" ] || die "the app was not produced"
+    mkdir -p "$app/Frameworks"
+    cp "$module" "$app/Frameworks/$PROFILE_MODULE"
+    if [ -n "$identity" ]; then
+        cp "$profile" "$app/embedded.mobileprovision"
+        security cms -D -i "$profile" > "$out/profile.plist"
+        /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$out/profile.plist" > "$out/entitlements.plist"
+        app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$out/profile.plist")
+        case "$app_id" in *".$PROFILE_BUNDLE_ID"|*".*") ;; *) die "the profile is for $app_id, not $PROFILE_BUNDLE_ID" ;; esac
+        run sign-module codesign -f -s "$identity" "$app/Frameworks/$PROFILE_MODULE"
+        run sign-app codesign -f -s "$identity" --entitlements "$out/entitlements.plist" "$app"
+        signed="with $identity"
+    else
+        rm -f "$app/embedded.mobileprovision"
+        run sign-module codesign -f -s - "$app/Frameworks/$PROFILE_MODULE"
+        run sign-app codesign -f -s - "$app"
+        signed="ad hoc"
+    fi
+    run sign-verify codesign -v --strict "$app"
 
-step "9/9 package"
-if [ -n "$ipa" ]; then
-    stage=$(mktemp -d "$out/ipa-stage.XXXXXX")
-    mkdir -p "$stage/Payload"
-    staged=$stage/Payload/$(basename "$app")
-    ditto "$app" "$staged"
-    # Unsigned: the sideloading tool signs it with the player's own Apple ID.
-    rm -f "$staged/embedded.mobileprovision"
-    find "$staged" -name _CodeSignature -type d -prune -exec rm -rf {} +
-    while IFS= read -r -d '' f; do
-        if file -b "$f" | grep -q 'Mach-O'; then codesign --remove-signature "$f"; fi
-    done < <(find "$staged" -type f -print0)
-    # Provenance, for bug reports: what this build was made from.
-    cat > "$staged/BuilderProvenance.json" <<EOF
+    step "9/9 package"
+    if [ -n "$ipa" ]; then
+        stage=$(mktemp -d "$out/ipa-stage.XXXXXX")
+        mkdir -p "$stage/Payload"
+        staged=$stage/Payload/$(basename "$app")
+        ditto "$app" "$staged"
+        # Unsigned: the sideloading tool signs it with the player's own Apple ID.
+        rm -f "$staged/embedded.mobileprovision"
+        find "$staged" -name _CodeSignature -type d -prune -exec rm -rf {} +
+        while IFS= read -r -d '' f; do
+            if file -b "$f" | grep -q 'Mach-O'; then codesign --remove-signature "$f"; fi
+        done < <(find "$staged" -type f -print0)
+        # Provenance, for bug reports: what this build was made from.
+        cat > "$staged/BuilderProvenance.json" <<EOF
 {
   "profile": "$PROFILE_NAME",
   "containsTranslatedGameCode": true,
@@ -261,35 +293,62 @@ if [ -n "$ipa" ]; then
   "composite_digest": "$(cat "$out/composite-src.digest" 2>/dev/null)",
   "mods": $([ "$mods" -eq 1 ] && echo true || echo false),
   "local_training": $([ "$train_pgo" -eq 1 ] && echo true || echo false),
-  "composite_profile_sha256": "$([ ${#composite_pgo[@]} -eq 0 ] || shasum -a 256 "$out/composite.profdata" | awk '{print $1}')",
-  "module_sha256": "$(shasum -a 256 "$staged/Frameworks/$PROFILE_MODULE" | awk '{print $1}')",
+  "composite_profile_sha256": "$([ ${#composite_pgo[@]} -eq 0 ] || sha256_file "$out/composite.profdata")",
+  "module_sha256": "$(sha256_file "$staged/Frameworks/$PROFILE_MODULE")",
   "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
-    # Audit: the IPA holds the app and the translated module, never the disc,
-    # saves or signing material.
-    bad=$(find "$staged" \( -iname '*.iso' -o -iname '*.gcm' -o -iname '*.rvz' -o -iname '*.wbfs' \
-        -o -iname '*.wia' -o -iname '*.ciso' -o -iname '*.gcz' -o -iname '*.nfs' -o -iname '*.dol' \
-        -o -iname '*.rel' -o -iname '*.card' -o -iname '*.gci' -o -iname '*.sav' -o -iname '*.raw' \
-        -o -name embedded.mobileprovision -o -name _CodeSignature -o -name '*.p12' \) -print)
-    [ -z "$bad" ] || die "refusing to package private files: $bad"
-    [ -f "$staged/Frameworks/$PROFILE_MODULE" ] || die "the staged app has no $PROFILE_MODULE"
-    pending_ipa=$(mktemp "${ipa}.pending.XXXXXX")
-    (cd "$stage" && ditto -c -k --norsrc --keepParent Payload "$pending_ipa")
-    unzip -l "$pending_ipa" | grep -q "Payload/$(basename "$app")/Info.plist" || die "the IPA has no Info.plist"
-    mv "$pending_ipa" "$ipa"
-    rm -rf "$stage"
-    echo "IPA: $ipa ($(du -h "$ipa" | awk '{print $1}'), unsigned)"
-    echo "     It contains game code translated from your disc: keep it for yourself."
-else
-    echo "no IPA requested (--ipa FILE)"
-fi
-if [ -n "$install_device" ]; then
-    run install xcrun devicectl device install app --device "$install_device" "$app"
-    echo "installed on $install_device"
-fi
+        # Audit: the IPA holds the app and the translated module, never the disc,
+        # saves or signing material.
+        bad=$(find "$staged" \( -iname '*.iso' -o -iname '*.gcm' -o -iname '*.rvz' -o -iname '*.wbfs' \
+            -o -iname '*.wia' -o -iname '*.ciso' -o -iname '*.gcz' -o -iname '*.nfs' -o -iname '*.dol' \
+            -o -iname '*.rel' -o -iname '*.card' -o -iname '*.gci' -o -iname '*.sav' -o -iname '*.raw' \
+            -o -name embedded.mobileprovision -o -name _CodeSignature -o -name '*.p12' \) -print)
+        [ -z "$bad" ] || die "refusing to package private files: $bad"
+        [ -f "$staged/Frameworks/$PROFILE_MODULE" ] || die "the staged app has no $PROFILE_MODULE"
+        pending_ipa=$(mktemp "${ipa}.pending.XXXXXX")
+        (cd "$stage" && ditto -c -k --norsrc --keepParent Payload "$pending_ipa")
+        unzip -l "$pending_ipa" | grep -q "Payload/$(basename "$app")/Info.plist" || die "the IPA has no Info.plist"
+        mv "$pending_ipa" "$ipa"
+        rm -rf "$stage"
+        echo "IPA: $ipa ($(du -h "$ipa" | awk '{print $1}'), unsigned)"
+        echo "     It contains game code translated from your disc: keep it for yourself."
+    else
+        echo "no IPA requested (--ipa FILE)"
+    fi
+    if [ -n "$install_device" ]; then
+        run install xcrun devicectl device install app --device "$install_device" "$app"
+        echo "installed on $install_device"
+    fi
 
-echo
-echo "$PROFILE_APP_NAME.app: $app ($(du -sh "$app" | awk '{print $1}'), signed $signed)"
-echo "game module: $(shasum -a 256 "$app/Frameworks/$PROFILE_MODULE" | awk '{print $1}')"
-echo "On first launch the app asks for the disc image; copy it to the device with Finder or the Files app."
+    echo
+    echo "$PROFILE_APP_NAME.app: $app ($(du -sh "$app" | awk '{print $1}'), signed $signed)"
+    echo "game module: $module_hash"
+    echo "On first launch the app asks for the disc image; copy it to the device with Finder or the Files app."
+else
+    # Linux and any other non-bundle platform: the app is a plain binary; the
+    # game module is placed beside it. How to run it is in docs/LINUX.md.
+    [ -x "$app" ] || die "the app was not produced"
+    app_dir=$(dirname "$app")
+    cp "$module" "$app_dir/$PROFILE_MODULE"
+    # Provenance, for bug reports: what this build was made from.
+    cat > "$app_dir/BuilderProvenance.json" <<EOF
+{
+  "profile": "$PROFILE_NAME",
+  "containsTranslatedGameCode": true,
+  "source_commit": "$source_commit",
+  "packaging_commit": "$(git rev-parse HEAD)",
+  "source_modified": $([ "$source_modified" = false ] && [ "$source_commit" = "$(git rev-parse HEAD)" ] && [ -z "$(git status --porcelain)" ] && echo false || echo true),
+  "composite_digest": "$(cat "$out/composite-src.digest" 2>/dev/null)",
+  "mods": $([ "$mods" -eq 1 ] && echo true || echo false),
+  "local_training": $([ "$train_pgo" -eq 1 ] && echo true || echo false),
+  "composite_profile_sha256": "$([ ${#composite_pgo[@]} -eq 0 ] || sha256_file "$out/composite.profdata")",
+  "module_sha256": "$module_hash",
+  "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+    echo
+    echo "$PROFILE_APP_NAME: $app"
+    echo "game module: $app_dir/$PROFILE_MODULE ($module_hash)"
+    echo "Run it with the launcher beside it: $app_dir/run.sh  (docs/LINUX.md)"
+fi

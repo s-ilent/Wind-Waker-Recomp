@@ -7,6 +7,15 @@
 
 extern void ppc_set_mem_write_journal(PPCMemWriteJournal fn, void* user);
 
+/* The x86-64-v3 dispatch twin: dispatch_v3.c on GCC/Clang builds, the
+ * platform build's own wiring elsewhere on Windows. */
+#if defined(__x86_64__)
+int dolrecomp_call__x86_64_v3(CPUState* ctx, u32 address);
+#endif
+#ifdef BLUEWAKE_COMPOSITE_DISPATCH_V3
+u32 bluewake_composite_apply_mods_v3(u32 mask);
+#endif
+
 unsigned dolrecomp_call_depth = 0;
 static BluewakeEdgeServiceFn s_edge_service;
 static void* s_edge_service_user;
@@ -181,6 +190,10 @@ RECOMP_MODULE_EXPORT u32 bluewake_composite_apply_mods(u32 mask)
 {
     u32 replaced = 0;
     s_mod_enabled_mask = mask;
+#ifdef BLUEWAKE_COMPOSITE_DISPATCH_V3
+    /* The v3 dispatch twin holds its own copy of the tables and mod state. */
+    bluewake_composite_apply_mods_v3(mask);
+#endif
 #if MODULE_MOD_COUNT > 0
     for (u32 i = 0; i < MODULE_MOD_CHUNK_COUNT; ++i) {
         const BlueWakeModChunk* c = &s_mod_chunks[i];

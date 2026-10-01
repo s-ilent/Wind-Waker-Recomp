@@ -91,3 +91,14 @@ if(COMPOSITE_OPTIMIZATION_LEVEL STREQUAL "2")
     message(STATUS "O1 optimizer fallback: ${FALLBACK_SOURCE}")
   endforeach()
 endif()
+
+# A second, x86-64-v3 copy of the generated dispatcher: module_export.c probes
+# the host CPU at runtime and picks this one when AVX2-class instructions are
+# available. GCC/Clang only; the Windows build wires its own twin.
+if((CMAKE_C_COMPILER_ID MATCHES "GNU|Clang") AND
+   CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
+  target_sources(${MODULE_NAME} PRIVATE dispatch_v3.c)
+  set_source_files_properties(dispatch_v3.c PROPERTIES
+    COMPILE_OPTIONS "-march=x86-64-v3")
+  target_compile_definitions(${MODULE_NAME} PRIVATE BLUEWAKE_COMPOSITE_DISPATCH_V3=1)
+endif()

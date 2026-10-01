@@ -17,9 +17,12 @@ ref_dir = pathlib.Path("ref")
 for dep in lock["dependencies"]:
     dep_id = dep["id"]
     url = dep["url"]
-    sha = dep["sha"]
+    sha = dep.get("sha")
     if dep.get("submodule_of"):
         print(f"  {dep_id}: provided by {dep['submodule_of']} at {dep['submodule_path']}")
+        continue
+    if not sha:
+        print(f"  {dep_id}: reference only, nothing to clone")
         continue
     local = dep.get("local_checkout")
     path = pathlib.Path(local["path"]) if local else ref_dir / dep_id

@@ -12,3 +12,9 @@ builds from its own copy, https://github.com/elliotttate/RecompCore, branch `blu
 8ab24da: that tree plus 0098 to 0112, with DolRecomp at https://github.com/elliotttate/DolRecomp
 (b8b5345, 5c91d6e plus patches/dolrecomp/0019). The Builder fetches it at the commit pinned in
 `scripts/builder/profiles/bluewake.sh`; see docs/status/DEVICE_BUILD.md.
+
+0113 is newer than the pinned fork and is not in it yet: it fixes a Linux-only compile error in the
+Aurora fork (a `wgpu::VertexBufferLayout` designated initializer written out of declaration order,
+which GCC rejects and MSVC does not) and is recorded here for the companion RecompCore pull request.
+Until that lands and `RECOMPCORE_SHA` is bumped, a Linux Builder run stops at the pinned-source check
+in `bw_fetch_game_sources` with `ref/recompcore` carrying the same one-line change locally.

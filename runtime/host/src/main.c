@@ -5869,8 +5869,10 @@ static const BwStateField k_host_state_fields[] = {
     HS_FIELD(g_guest_decrementer_pending),
     HS_FIELD(g_cycle_domain.absolute_cycles), HS_FIELD(g_cycle_domain.dispatch_cycles),
     HS_FIELD(g_vi_cycle_cursor), HS_FIELD(g_audio_cycle_cursor), HS_FIELD(g_dsp_cycle_cursor),
+#ifdef BLUEWAKE_HAS_DSP_ADAPTER
     HS_FIELD(g_dsp_adapter_interrupt_pending), HS_FIELD(g_dsp_adapter_slice_cycles),
     HS_FIELD(g_dsp_adapter_update_elapsed), HS_FIELD(g_dsp_adapter_dma_count),
+#endif
     HS_FIELD(g_host_retrace_count), HS_FIELD(g_previous_retrace_timebase), HS_FIELD(g_vi_assert_reports),
     HS_FIELD(g_context_shadows), HS_FIELD(g_delivery_digest),
     HS_FIELD(g_async_draw_done_commits),
@@ -6463,8 +6465,13 @@ int main(int argc, char** argv) {
                      host_root) < (int)sizeof dylib_scratch &&
             access(dylib_scratch, R_OK) == 0)
             dylib_path = dylib_scratch;
+#if defined(__linux__)
+        else
+            dylib_path = "build/composite-lib/gGZLE01_recomp.so";
+#else
         else
             dylib_path = "build/composite-lib/gGZLE01_recomp.dylib";
+#endif
     }
     host_apply_default_env("BLUEWAKE_DOL", host_root, "generated/full/main.dol");
     host_apply_default_env("BLUEWAKE_RELS_DIR", host_root,

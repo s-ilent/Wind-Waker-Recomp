@@ -53,6 +53,26 @@ profile_check_tools() {
 }
 
 profile_dependencies() {
+    bw_fetch_game_sources
+
+    deps=$root/build/deps
+    mkdir -p "$deps"
+    local dawn_tar=$deps/dawn-ios-arm64.tar.gz
+    if [ ! -f "$dawn_tar" ] || [ "$(sha256_file "$dawn_tar")" != "$DAWN_SHA256" ]; then
+        run dawn-download curl -fL -o "$dawn_tar" "$DAWN_URL"
+    fi
+    [ "$(sha256_file "$dawn_tar")" = "$DAWN_SHA256" ] || die "Dawn package checksum mismatch"
+    if [ ! -f "$deps/dawn-ios/lib/cmake/Dawn/DawnConfig.cmake" ]; then
+        rm -rf "$deps/dawn-ios" && mkdir -p "$deps/dawn-ios"
+        tar xzf "$dawn_tar" -C "$deps/dawn-ios"
+    fi
+    echo "Dawn iOS package $DAWN_SHA256"
+}
+
+# The pinned RecompCore and DolRecomp sources every platform's build translates
+# and runs against. Shared by the Apple profile above and the Linux profile
+# (bluewake-linux.sh), which overrides the rest.
+bw_fetch_game_sources() {
     recompcore=$root/ref/recompcore
     local fresh_clone=0
     if [ ! -e "$recompcore/.git" ]; then
@@ -88,19 +108,6 @@ profile_dependencies() {
         die "ref/recompcore has local changes; the build must use the pinned source exactly"
     fi
     echo "RecompCore $RECOMPCORE_SHA, DolRecomp $DOLRECOMP_SHA"
-
-    deps=$root/build/deps
-    mkdir -p "$deps"
-    local dawn_tar=$deps/dawn-ios-arm64.tar.gz
-    if [ ! -f "$dawn_tar" ] || [ "$(shasum -a 256 "$dawn_tar" | awk '{print $1}')" != "$DAWN_SHA256" ]; then
-        run dawn-download curl -fL -o "$dawn_tar" "$DAWN_URL"
-    fi
-    [ "$(shasum -a 256 "$dawn_tar" | awk '{print $1}')" = "$DAWN_SHA256" ] || die "Dawn package checksum mismatch"
-    if [ ! -f "$deps/dawn-ios/lib/cmake/Dawn/DawnConfig.cmake" ]; then
-        rm -rf "$deps/dawn-ios" && mkdir -p "$deps/dawn-ios"
-        tar xzf "$dawn_tar" -C "$deps/dawn-ios"
-    fi
-    echo "Dawn iOS package $DAWN_SHA256"
 }
 
 profile_extract() {
@@ -145,9 +152,9 @@ profile_generate() {
     # Reuse only a verified tree made by the same generators and mod selection.
     # Checking the base digest alone used to retain mod variants after --no-mods.
     local inputs current saved
-    inputs=$( { printf '%s\n' "$digest" "$mods"; shasum -a 256 \
+    inputs=$( { printf '%s\n' "$digest" "$mods"; sha256_file \
         "$root/scripts/mods/"*.py "$root/scripts/mods/"*.sh \
-        "$root/mods/widescreen/"*.gecko "$root/mods/betterww/options.txt"; } | shasum -a 256 | awk '{print $1}')
+        "$root/mods/widescreen/"*.gecko "$root/mods/betterww/options.txt"; } | sha256_stdin)
     current=""
     if [ -d "$out/composite-src" ]; then
         current=$(python3 scripts/ios/composite_manifest.py "$out/composite-src" | awk '{print $1}')
@@ -201,7 +208,7 @@ profile_compile() {
         # The profile is a compiler input but not a C header dependency. Put
         # its hash in the flag so Ninja recompiles when the counters change.
         local profile_hash profile_path
-        profile_hash=$(shasum -a 256 "$out/composite.profdata" | awk '{print $1}')
+        profile_hash=$(sha256_file "$out/composite.profdata")
         mkdir -p "$out/profiles"
         profile_path=$out/profiles/composite-$profile_hash.profdata
         cp "$out/composite.profdata" "$profile_path"
@@ -222,7 +229,7 @@ profile_build_app() {
     local host_flags=""
     if [ -n "$host_pgo" ]; then
         local profile_hash profile_path
-        profile_hash=$(shasum -a 256 "$host_pgo" | awk '{print $1}')
+        profile_hash=$(sha256_file "$host_pgo")
         mkdir -p "$out/profiles"
         profile_path=$out/profiles/host-$profile_hash.profdata
         cp "$host_pgo" "$profile_path"

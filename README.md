@@ -39,6 +39,9 @@ credits are preserved below and in [RIGHTS_AND_LICENSES.md](RIGHTS_AND_LICENSES.
 > **iPhone and iPad: build your own.** No prebuilt IPA is provided. You build it on a Mac from your disc
 > and install it on your own device; see [iPhone and iPad](#iphone-and-ipad).
 >
+> **Linux: build it yourself.** A native Linux build (Vulkan rendering through the same Aurora/Dawn
+> renderer, SDL3) is supported from source with your own disc; see [Linux](docs/LINUX.md).
+>
 > **AI disclosure:** Wind Waker Recomp is developed with substantial AI assistance for code, testing,
 > documentation and debugging. The status log records what has actually been checked, and on what.
 
@@ -46,7 +49,7 @@ credits are preserved below and in [RIGHTS_AND_LICENSES.md](RIGHTS_AND_LICENSES.
 [open an issue](https://github.com/elliotttate/Wind-Waker-Recomp/issues).
 
 [Features](#features) · [Controls](#controls) · [Windows](#windows) · [Mac](#mac) ·
-[iPhone and iPad](#iphone-and-ipad) · [Performance](#performance) · [Mods](#mods) ·
+[iPhone and iPad](#iphone-and-ipad) · [Linux](docs/LINUX.md) · [Performance](#performance) · [Mods](#mods) ·
 [Known issues](#known-issues) · [FAQ](#frequently-asked-questions)
 
 ## What is it?

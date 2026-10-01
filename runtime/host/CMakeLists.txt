@@ -431,33 +431,91 @@ if(BLUEWAKE_ENABLE_DSP_ADAPTER)
         "${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Source/Core/Core/CMakeFiles/core.dir/DSP/Jit/DSPEmitterBase.cpp.o"
         "${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Source/Core/Core/CMakeFiles/core.dir/HW/DSPHLE/*.o"
         "${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Source/Core/Core/CMakeFiles/core.dir/HW/DSPHLE/UCodes/*.o")
+    if(NOT APPLE)
+        # The x64 DSP JIT's emitter: the LTO merge can reach its constructor
+        # from the DSPHLE members, so its defining objects ride along (LTO
+        # keeps them lazy).
+        file(GLOB BLUEWAKE_DSP_OBJECTS_X64
+            "${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Source/Core/Core/CMakeFiles/core.dir/DSP/Jit/x64/*.o")
+        list(APPEND BLUEWAKE_DSP_OBJECTS ${BLUEWAKE_DSP_OBJECTS_X64})
+    endif()
     list(LENGTH BLUEWAKE_DSP_OBJECTS BLUEWAKE_DSP_OBJECT_COUNT)
     if(BLUEWAKE_DSP_OBJECT_COUNT LESS 20)
         message(FATAL_ERROR "The donor DSP object set is incomplete")
     endif()
     set(BLUEWAKE_DSP_ARCHIVE
         "${CMAKE_CURRENT_BINARY_DIR}/libbluewake-dsp-donor.a")
-    add_custom_command(OUTPUT "${BLUEWAKE_DSP_ARCHIVE}"
-        COMMAND /usr/bin/libtool -static -o "${BLUEWAKE_DSP_ARCHIVE}"
-            ${BLUEWAKE_DSP_OBJECTS}
-        DEPENDS ${BLUEWAKE_DSP_OBJECTS}
-        VERBATIM)
+    if(NOT APPLE)
+        # The small object set only links when the donor was built with
+        # interprocedural optimization: the DSP objects' references to
+        # header-inline Core methods must be inlined away, not left as
+        # out-of-line calls into objects this archive does not carry.
+        if(NOT EXISTS
+           "${BLUEWAKE_DSP_DONOR_BUILD_DIR}/CMakeCache.txt")
+            message(FATAL_ERROR "BLUEWAKE_DSP_DONOR_BUILD_DIR has no CMakeCache.txt")
+        endif()
+        file(STRINGS "${BLUEWAKE_DSP_DONOR_BUILD_DIR}/CMakeCache.txt" _bw_dsp_ipo
+             REGEX "^CMAKE_INTERPROCEDURAL_OPTIMIZATION[^=]*=(ON|TRUE|1)$")
+        if(NOT _bw_dsp_ipo)
+            message(FATAL_ERROR
+                "The donor RecompCore build at ${BLUEWAKE_DSP_DONOR_BUILD_DIR} "
+                "was configured without interprocedural optimization; the DSP "
+                "object set needs it. Configure the donor with "
+                "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON "
+                "(scripts/build_macos_dsp_host.sh is the reference flow).")
+        endif()
+    endif()
+    if(APPLE)
+        add_custom_command(OUTPUT "${BLUEWAKE_DSP_ARCHIVE}"
+            COMMAND /usr/bin/libtool -static -o "${BLUEWAKE_DSP_ARCHIVE}"
+                ${BLUEWAKE_DSP_OBJECTS}
+            DEPENDS ${BLUEWAKE_DSP_OBJECTS}
+            VERBATIM)
+    else()
+        # The donor objects are Mach-O/ELF alike; a plain archive joins them.
+        add_custom_command(OUTPUT "${BLUEWAKE_DSP_ARCHIVE}"
+            COMMAND ${CMAKE_AR} rcs "${BLUEWAKE_DSP_ARCHIVE}"
+                ${BLUEWAKE_DSP_OBJECTS}
+            DEPENDS ${BLUEWAKE_DSP_OBJECTS}
+            VERBATIM)
+        find_package(Threads REQUIRED)
+    endif()
     add_custom_target(bluewake_dsp_donor_archive
         DEPENDS "${BLUEWAKE_DSP_ARCHIVE}")
     add_library(bluewake_dsp_donor STATIC IMPORTED GLOBAL)
     set_target_properties(bluewake_dsp_donor PROPERTIES
         IMPORTED_LOCATION "${BLUEWAKE_DSP_ARCHIVE}")
     add_dependencies(bluewake_dsp_adapter bluewake_dsp_donor_archive)
-    target_link_libraries(bluewake_dsp_adapter PRIVATE
-        bluewake_dsp_donor
-        ${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Source/Core/Common/libcommon.a
-        ${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Externals/xxhash/libxxhash.a
-        ${BLUEWAKE_DSP_FMT_LIBRARY}
-        z
-        iconv
-        "-framework CoreFoundation"
-        "-framework Foundation"
-    )
+    if(APPLE)
+        target_link_libraries(bluewake_dsp_adapter PRIVATE
+            bluewake_dsp_donor
+            ${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Source/Core/Common/libcommon.a
+            ${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Externals/xxhash/libxxhash.a
+            ${BLUEWAKE_DSP_FMT_LIBRARY}
+            z
+            iconv
+            "-framework CoreFoundation"
+            "-framework Foundation"
+        )
+    else()
+        # Linux donor builds use the system xxhash, so its archive may not
+        # exist; link whichever this build produced.
+        set(BLUEWAKE_DSP_DONOR_LIBS
+            bluewake_dsp_donor
+            ${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Source/Core/Common/libcommon.a
+            ${BLUEWAKE_DSP_FMT_LIBRARY}
+            z
+            Threads::Threads
+            ${CMAKE_DL_LIBS})
+        if(EXISTS "${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Externals/xxhash/libxxhash.a")
+            list(APPEND BLUEWAKE_DSP_DONOR_LIBS
+                "${BLUEWAKE_DSP_DONOR_BUILD_DIR}/Externals/xxhash/libxxhash.a")
+        else()
+            find_library(BLUEWAKE_DSP_XXHASH_LIBRARY NAMES xxhash REQUIRED)
+            list(APPEND BLUEWAKE_DSP_DONOR_LIBS "${BLUEWAKE_DSP_XXHASH_LIBRARY}")
+        endif()
+        target_link_libraries(bluewake_dsp_adapter PRIVATE ${BLUEWAKE_DSP_DONOR_LIBS})
+    endif()
 
     add_executable(bluewake_dsp_adapter_test src/dsp_adapter_test.cpp)
     target_link_libraries(bluewake_dsp_adapter_test PRIVATE bluewake_dsp_adapter)

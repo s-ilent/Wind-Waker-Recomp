@@ -72,6 +72,13 @@ A port's profile has to answer three questions, which are also its safety checks
 
 A port whose app builds differently only changes its `profile_build_app`.
 
+A platform port of the same game goes further: its profile sources the game's
+profile and overrides the platform hooks (`profile_check_tools`,
+`profile_dependencies`, `profile_train`, `profile_compile`,
+`profile_build_app`), reusing the disc checks, translator settings and digests
+unchanged. `bluewake-linux.sh` is the example; the pipeline's macOS-only steps
+(embedding, codesign, IPA) only run for a `.app` bundle.
+
 ## Progress and build time
 
 The terminal reports the active stage and elapsed time, with available compiler progress. A
