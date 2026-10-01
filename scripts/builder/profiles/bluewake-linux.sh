@@ -63,14 +63,18 @@ profile_dependencies() {
 }
 
 profile_train() {
-    # Local training builds and plays a headless host on the Mac. The Linux
-    # host can train too, but that is not wired up yet; the build proceeds
-    # without a game profile (about 10 percent slower; docs/LINUX.md).
-    echo "skipped: local optimization training is not supported on Linux yet"
+    local args=(--disc "$iso" --out "$out" --jobs "$jobs")
+    [ -z "$training_save" ] || args+=(--save "$training_save")
+    run local-training python3 "$root/scripts/builder/train_local_pgo.py" "${args[@]}"
+    [ -s "$out/pgo-local/composite.profdata" ] || die "local training produced no game profile"
+    composite_pgo+=("$out/pgo-local/composite.profdata")
+    host_pgo="$out/pgo-local/host.profdata"
 }
 
 profile_compile() {
     local flags=""
+    # The profile counters are clang's: the module must be compiled by the
+    # same compiler family for the counts to apply.
     if [ ${#composite_pgo[@]} -gt 0 ]; then
         run composite-pgo-merge llvm-profdata merge -o "$out/composite.profdata" "${composite_pgo[@]}"
         # The profile is a compiler input but not a C header dependency. Put
@@ -80,7 +84,7 @@ profile_compile() {
         mkdir -p "$out/profiles"
         profile_path=$out/profiles/composite-$profile_hash.profdata
         cp "$out/composite.profdata" "$profile_path"
-        flags="$(pgo_flags "$profile_path")"
+        flags="$(pgo_flags "$profile_path") -DCMAKE_C_COMPILER=clang"
         echo "with the composite profile(s): ${composite_pgo[*]}"
     fi
     run composite-configure cmake -S cmake/composite -B "$out/composite" -G Ninja \
@@ -94,6 +98,7 @@ profile_compile() {
 
 profile_build_app() {
     local host_flags=""
+    local compiler_args=""
     if [ -n "$host_pgo" ]; then
         local profile_hash profile_path
         profile_hash=$(sha256_file "$host_pgo")
@@ -101,10 +106,13 @@ profile_build_app() {
         profile_path=$out/profiles/host-$profile_hash.profdata
         cp "$host_pgo" "$profile_path"
         host_flags=$(pgo_flags "$profile_path")
+        compiler_args="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++"
         echo "with the host profile $host_pgo"
     fi
     run app-configure cmake -S runtime/host -B "$out/app" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release "-DCMAKE_C_FLAGS=$host_flags" "-DCMAKE_CXX_FLAGS=$host_flags" \
+        $compiler_args \
+        -DBUILD_SHARED_LIBS=OFF \
         -DBLUEWAKE_ENABLE_DSP_ADAPTER=ON -DBLUEWAKE_ENABLE_DSP_IPO=OFF \
         -DBLUEWAKE_DSP_DONOR_DIR="$recompcore" \
         -DBLUEWAKE_DSP_DONOR_BUILD_DIR="$out/dsp-donor"

@@ -38,9 +38,19 @@ set(_dsp_includes
     ${_donor}/Externals/xxhash/xxHash
     ${BLUEWAKE_REPO_ROOT}/apple/ios/dsp_generated)
 target_include_directories(bluewake_dsp_donor PUBLIC ${_dsp_includes})
-target_compile_definitions(bluewake_dsp_donor PUBLIC
-    _ARCH_64=1 _M_ARM_64=1 FMT_EXCEPTIONS=0 _DEFAULT_SOURCE
-    __STDC_CONSTANT_MACROS __STDC_LIMIT_MACROS)
+if(APPLE)
+    target_compile_definitions(bluewake_dsp_donor PUBLIC
+        _ARCH_64=1 _M_ARM_64=1 FMT_EXCEPTIONS=0 _DEFAULT_SOURCE
+        __STDC_CONSTANT_MACROS __STDC_LIMIT_MACROS)
+else()
+    # The DSP sources are arch-neutral; leaving the platform define unset
+    # (as the ARM64 build does) keeps the guest's HLE route on the generic
+    # DSP emitter and out of the x86 JIT, whose Common emitter sources this
+    # shim build deliberately does not carry.
+    target_compile_definitions(bluewake_dsp_donor PUBLIC
+        _ARCH_64=1 FMT_EXCEPTIONS=0 _DEFAULT_SOURCE
+        __STDC_CONSTANT_MACROS __STDC_LIMIT_MACROS)
+endif()
 target_compile_features(bluewake_dsp_donor PUBLIC cxx_std_23)
 target_compile_options(bluewake_dsp_donor PRIVATE -fno-strict-aliasing -w)
 target_link_libraries(bluewake_dsp_donor PUBLIC fmt::fmt xxhash)
@@ -50,7 +60,13 @@ add_library(bluewake_dsp_adapter STATIC
     ${BLUEWAKE_HOST_SRC}/dsp_adapter_c.cpp
     ${BLUEWAKE_HOST_SRC}/dsp_adapter_donor_stubs.cpp
     ${BLUEWAKE_HOST_SRC}/dsp_hle_backend.cpp)
-target_link_libraries(bluewake_dsp_adapter PUBLIC bluewake_dsp_donor
-    z iconv "-framework CoreFoundation" "-framework Foundation")
+if(APPLE)
+    target_link_libraries(bluewake_dsp_adapter PUBLIC bluewake_dsp_donor
+        z iconv "-framework CoreFoundation" "-framework Foundation")
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(bluewake_dsp_adapter PUBLIC bluewake_dsp_donor
+        z Threads::Threads ${CMAKE_DL_LIBS})
+endif()
 target_compile_definitions(bluewake_host PRIVATE BLUEWAKE_HAS_DSP_ADAPTER=1)
 target_link_libraries(bluewake_host PRIVATE bluewake_dsp_adapter)

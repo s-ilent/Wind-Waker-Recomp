@@ -105,8 +105,21 @@ def main():
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--save", type=Path, help="optional personal BlueWake .card container; only a copy is used")
     args = parser.parse_args()
-    if platform.system() != "Darwin" or platform.machine() != "arm64":
-        parser.error("local training currently requires an Apple Silicon Mac")
+    system = platform.system()
+    if system == "Darwin":
+        if platform.machine() != "arm64":
+            parser.error("local training on macOS requires Apple Silicon")
+        profdata = ["xcrun", "llvm-profdata"]
+        osx_args = ["-DCMAKE_OSX_ARCHITECTURES=arm64"]
+        module_link_flags = "-fprofile-instr-generate -Wl,-no_compact_unwind"
+        module_suffix = "dylib"
+    elif system == "Linux":
+        profdata = ["llvm-profdata"]
+        osx_args = []
+        module_link_flags = "-fprofile-instr-generate"
+        module_suffix = "so"
+    else:
+        parser.error(f"local training is not supported on {system}")
     if args.jobs < 1:
         parser.error("--jobs must be positive")
     args.disc, args.out = args.disc.resolve(), args.out.resolve()
@@ -129,7 +142,7 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     logs = work / "logs"
     logs.mkdir(exist_ok=True)
-    compiler = subprocess.check_output(["xcrun", "clang", "--version"], text=True)
+    compiler = subprocess.check_output(["clang", "--version"], text=True)
     key = fingerprint(args, compiler)
     receipt = work / "training.json"
     outputs = [work / "composite.profdata", work / "host.profdata"]
@@ -146,16 +159,22 @@ def main():
     donor = ROOT / "ref/recompcore"
     host_build = work / "host"
     module_build = work / "composite"
-    common = ["-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_OSX_ARCHITECTURES=arm64",
+    common = ["-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", *osx_args,
+              "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++",
               "-DCMAKE_C_FLAGS=-fprofile-instr-generate", "-DCMAKE_CXX_FLAGS=-fprofile-instr-generate"]
+    # Linux uses the system SDL3; a vendored static SDL3 needs the full set of
+    # development packages and instrumenting SDL is of no use to these counts.
+    sdl3_args = (["-DAURORA_SDL3_PROVIDER=vendor", "-DAURORA_SDL3_LINKAGE=static"]
+                 if system == "Darwin" else
+                 ["-DAURORA_SDL3_PROVIDER=system"])
     run(["cmake", "-S", ROOT / "scripts/builder/training", "-B", host_build, *common,
          "-DCMAKE_EXE_LINKER_FLAGS=-fprofile-instr-generate", "-DAURORA_DAWN_PROVIDER=package",
-         "-DAURORA_SDL3_PROVIDER=vendor", "-DAURORA_SDL3_LINKAGE=static", "-DAURORA_DAWN_LINKAGE=static"], logs / "host-configure.log")
+         *sdl3_args, "-DAURORA_DAWN_LINKAGE=static"], logs / "host-configure.log")
     run(["cmake", "--build", host_build, "--target", "bluewake_host", "-j", args.jobs], logs / "host-build.log")
     # Frontend instrumentation uses the same function counters independently
     # of optimization level. O0 shortens this disposable first compilation.
     run(["cmake", "-S", ROOT / "cmake/composite", "-B", module_build, *common,
-         "-DCMAKE_SHARED_LINKER_FLAGS=-fprofile-instr-generate -Wl,-no_compact_unwind", "-DCOMPOSITE_OPTIMIZATION_LEVEL=0",
+         f"-DCMAKE_SHARED_LINKER_FLAGS={module_link_flags}", "-DCOMPOSITE_OPTIMIZATION_LEVEL=0",
          f"-DCOMPOSITE_DIR={args.out / 'composite-src'}", f"-DGXRUNTIME_DIR={donor / 'GXRuntime'}",
          f"-DABI_DIR={donor / 'Source/Core/Core/PowerPC/StaticRecomp'}"], logs / "composite-configure.log")
     run(["cmake", "--build", module_build, "-j", args.jobs], logs / "composite-build.log")
@@ -182,7 +201,7 @@ def main():
         "BLUEWAKE_PAD_PULSE_LENGTH": "2", "BLUEWAKE_PAD_CONFIRM_EVENT": "any",
         "BLUEWAKE_PAD_SCRIPT": ",".join(f"{n}:0x0100:2" for n in range(17800, 22001, 150)),
     })
-    run([host_build / "host/bluewake_host", module_build / "gGZLE01_recomp.dylib"],
+    run([host_build / "host/bluewake_host", module_build / f"gGZLE01_recomp.{module_suffix}"],
         logs / "playback.log", env=environment, timeout=3600)
     playback = (logs / "playback.log").read_text(errors="replace")
     if "[player-milestone] control-admitted" not in playback:
@@ -192,8 +211,8 @@ def main():
         raise RuntimeError("both host and game module must produce raw profiles")
     # A combined file is valid for both targets: Clang picks matching function
     # names/hashes. Keep conventional output names for the builder interface.
-    run(["xcrun", "llvm-profdata", "merge", "-o", outputs[0], *profiles], logs / "profile-merge.log")
-    stats = subprocess.check_output(["xcrun", "llvm-profdata", "show", "--all-functions", str(outputs[0])], text=True)
+    run([*profdata, "merge", "-o", outputs[0], *profiles], logs / "profile-merge.log")
+    stats = subprocess.check_output([*profdata, "show", "--all-functions", str(outputs[0])], text=True)
     executed = re.findall(r"(?m)^  func_[0-9A-Fa-f]+:\n    Hash: [^\n]+\n    Counters: [^\n]+\n    Function count: ([0-9]+)", stats)
     if not any(int(count) > 0 for count in executed):
         raise RuntimeError("merged profile has no executed translated game function counters")

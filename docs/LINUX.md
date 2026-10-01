@@ -23,11 +23,14 @@ revision 0). Nothing in the repository or the build downloads game data.
 - **Compressed disc images**: the Builder and the runtime read raw `.iso`/`.gcm`
   only. Convert a `.gcm`/`.gcz`/`.rvz` first with Dolphin (**right-click the
   game › Convert… › ISO**, or `dolphin-tool convert --format RAW` if packaged).
-- **Local optimization training** (`profile_train`): the Builder skips it, so a
-  Linux build compiles the game module without a profile and plays a little
-  slower. Pass `--no-pgo` to the same effect; the flag is not needed.
-- **A packaged release**: you run the app from the build directory with the
-  generated launcher; there is no installer or AppImage yet.
+- **Local optimization training** (`profile_train`): supported — the Builder
+  trains a profile from your own disc the same way the Mac flow does (clang
+  and `llvm-profdata` required; the profiled builds compile with clang).
+  Without it the game plays below full speed.
+- **A packaged release**: the app runs from the build directory with the
+  generated launcher; there is no installer yet.
+  [Dusklight](https://github.com/TwilitRealm/dusklight) ships Linux AppImages
+  via linuxdeploy, which is the pattern to follow when this project gets one.
 - **Use the native Wayland session.** Forcing `SDL_VIDEODRIVER=x11` hangs in
   Xlib window creation with the DSP build (blocked in `XIfEvent`); the same
   binary runs correctly on Wayland.
@@ -40,15 +43,19 @@ revision 0). Nothing in the repository or the build downloads game data.
 
 ### Dependencies
 
-Any recent distribution. You need:
+Any recent distribution; the set below follows [Dusklight](https://github.com/TwilitRealm/dusklight),
+the reference Aurora source port, whose Linux builds are the tested baseline.
+You need:
 
 - CMake 3.25+, Ninja, git, curl, python3
-- A C/C++ compiler (gcc or clang)
+- A C/C++ compiler (clang recommended; a plain gcc build works)
 - SDL3 (3.4 or newer): from your distribution (`sdl3`/`libsdl3-dev`) or let the
-  build compile a pinned copy from source automatically (needs the usual X11,
-  Wayland and audio development packages for a windowed build, for example on
-  Debian/Ubuntu: `libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
-  libasound2-dev libpulse-dev libdbus-1-dev`)
+  build compile a pinned copy from source automatically — the vendored build
+  wants the usual development packages (Debian/Ubuntu names):
+  `libasound2-dev libpulse-dev libdbus-1-dev libudev-dev libwayland-dev
+  libx11-xcb-dev libxi-dev libxrandr-dev libxinerama-dev libxcursor-dev
+  libxss-dev libxtst-dev libfreetype-dev libglu1-mesa-dev libdecor-0-dev
+  libpipewire-0.3-dev`
 - Vulkan loader and drivers at runtime (`vulkan-tools`' `vulkaninfo` is a good
   check); the Dawn package is downloaded prebuilt by the build itself
 
