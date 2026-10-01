@@ -31,9 +31,10 @@ revision 0). Nothing in the repository or the build downloads game data.
 - **Use the native Wayland session.** Forcing `SDL_VIDEODRIVER=x11` hangs in
   Xlib window creation with the DSP build (blocked in `XIfEvent`); the same
   binary runs correctly on Wayland.
-- **Quitting can crash after the save**: the app exits with a segmentation
-  fault during device teardown *after* it has stopped cleanly and saved; a
-  cosmetic-but-loud known issue.
+- **Exit skips GPU teardown.** On Wayland, NVIDIA's userspace driver crashes
+  inside Dawn's device destruction (wl_proxy calls on a dead connection), so
+  on Linux the host saves and closes everything, then leaves the device to
+  process exit. Saves and settings are unaffected.
 
 ## Build it yourself
 

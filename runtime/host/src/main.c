@@ -15279,12 +15279,23 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[heap-journal] callback-writes=%llu watched=%u\n",
                 g_heap_write_watch_total,
                 g_heap_write_watch_reports + g_heap_write_watch_control_reports);
-    if (aurora_enabled)
-        dol_aurora_shutdown();
+    bluewake_card_runtime_close();
 #ifdef BLUEWAKE_HAS_DSP_ADAPTER
     host_dsp_adapter_shutdown();
 #endif
-    bluewake_card_runtime_close();
     cpu_free(&cpu);
+#ifdef __linux__
+    /* Everything private is saved and closed above, so leave without
+     * destroying the GPU device: on Wayland, NVIDIA's userspace driver
+     * crashes inside Dawn's device teardown (wl_proxy calls on a dead
+     * connection), which no host-side ordering fixes. _exit skips the
+     * remaining atexit handlers and keeps the exit code. */
+    if (aurora_enabled) {
+        fflush(NULL);
+        _exit(stop_reason ? 1 : 0);
+    }
+#endif
+    if (aurora_enabled)
+        dol_aurora_shutdown();
     return stop_reason ? 1 : 0;
 }
