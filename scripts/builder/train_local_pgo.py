@@ -190,6 +190,9 @@ def main():
     environment.update({
         "LLVM_PROFILE_FILE": str(session / "%m-%p.profraw"),
         "BLUEWAKE_ROOT": str(ROOT), "BLUEWAKE_RENDERER": "headless",
+        # The certified route assumes the default options; a player's saved
+        # settings (instant text and friends divert the route) must not apply.
+        "BLUEWAKE_SETTINGS_FILE": str(session / "settings.ini"),
         "BLUEWAKE_DOL": str(args.out / "game/main.dol"), "BLUEWAKE_DISC": str(args.disc),
         "BLUEWAKE_RELS_DIR": str(args.out / "game/rels"), "BLUEWAKE_CARD_PATH": str(card),
         "BLUEWAKE_DSP_IROM": str(donor / "Data/Sys/GC/dsp_rom.bin"),

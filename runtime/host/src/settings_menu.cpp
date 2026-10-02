@@ -91,10 +91,23 @@ void set_env(const char* key, const std::string& value) {
 }
 
 std::string default_path() {
+    // An explicit path wins, so headless and CI runs keep their route-neutral
+    // settings no matter what a player's saved options say.
+    const char* override_path = std::getenv("BLUEWAKE_SETTINGS_FILE");
+    if (override_path != nullptr && override_path[0] != '\0')
+        return override_path;
     const char* home = std::getenv("HOME");
     if (home == nullptr || home[0] == '\0')
         return "";
+#if defined(__APPLE__)
     return std::string(home) + "/Library/Application Support/Wind Waker Recomp/settings.ini";
+#else
+    /* XDG config location; the Apple path above is where the Mac looks. */
+    const char* config_home = std::getenv("XDG_CONFIG_HOME");
+    if (config_home != nullptr && config_home[0] == '/')
+        return std::string(config_home) + "/Wind Waker Recomp/settings.ini";
+    return std::string(home) + "/.config/Wind Waker Recomp/settings.ini";
+#endif
 }
 
 std::string trim(std::string text) {

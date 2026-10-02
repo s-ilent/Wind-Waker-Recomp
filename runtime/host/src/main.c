@@ -6740,11 +6740,23 @@ int main(int argc, char** argv) {
     // when no window server is reachable.
     const bool renderer_requested = renderer != NULL && renderer[0] != '\0';
     if (!renderer_requested || strcmp(renderer, "aurora") == 0) {
+        /* On Wayland, KDE composites a FIFO surface's frame callbacks at a
+         * fraction of the display rate (measured ~20/s on a 120 Hz display),
+         * and the guest clock paces to presents: the game ran at a fifth of
+         * full speed. Mailbox presents do not block and hold full speed, so
+         * that is the Linux default; BLUEWAKE_VSYNC=1 opts back into FIFO. */
+        const char* vsync_env = getenv("BLUEWAKE_VSYNC");
+        bool vsync;
+#if defined(__linux__)
+        vsync = vsync_env != NULL && vsync_env[0] == '1';
+#else
+        vsync = vsync_env == NULL || vsync_env[0] != '0';
+#endif
         const AuroraBackendConfig aurora_config = {
             .app_name = "BlueWake",
             .window_width = 960u,
             .window_height = 720u,
-            .vsync = true,
+            .vsync = vsync,
             .allow_texture_dumps = false,
             .info_logging = true,
             .graphics_logging = getenv("DOL_AURORA_RECOMP_GRAPHICS_LOG") != NULL,

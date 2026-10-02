@@ -34,6 +34,11 @@ revision 0). Nothing in the repository or the build downloads game data.
 - **Use the native Wayland session.** Forcing `SDL_VIDEODRIVER=x11` hangs in
   Xlib window creation with the DSP build (blocked in `XIfEvent`); the same
   binary runs correctly on Wayland.
+- **VSync is off by default on Linux.** On KDE Wayland, a FIFO-presenting
+  surface's frame callbacks arrive at a fraction of the display rate (measured
+  ~20/s on a 120 Hz panel), and the game's clock paces to its presents — the
+  game crawled at a fifth of full speed. The default presents with Mailbox,
+  which holds full speed; `BLUEWAKE_VSYNC=1` opts back into FIFO.
 - **Exit skips GPU teardown.** On Wayland, NVIDIA's userspace driver crashes
   inside Dawn's device destruction (wl_proxy calls on a dead connection), so
   on Linux the host saves and closes everything, then leaves the device to

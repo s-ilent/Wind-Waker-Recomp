@@ -73,6 +73,7 @@ profile_train() {
 
 profile_compile() {
     local flags=""
+    local compiler_args=""
     # The profile counters are clang's: the module must be compiled by the
     # same compiler family for the counts to apply.
     if [ ${#composite_pgo[@]} -gt 0 ]; then
@@ -84,11 +85,12 @@ profile_compile() {
         mkdir -p "$out/profiles"
         profile_path=$out/profiles/composite-$profile_hash.profdata
         cp "$out/composite.profdata" "$profile_path"
-        flags="$(pgo_flags "$profile_path") -DCMAKE_C_COMPILER=clang"
+        flags="$(pgo_flags "$profile_path")"
+        compiler_args="-DCMAKE_C_COMPILER=clang"
         echo "with the composite profile(s): ${composite_pgo[*]}"
     fi
     run composite-configure cmake -S cmake/composite -B "$out/composite" -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release "-DCMAKE_C_FLAGS=$flags" \
+        -DCMAKE_BUILD_TYPE=Release "-DCMAKE_C_FLAGS=$flags" $compiler_args \
         -DCOMPOSITE_OPTIMIZATION_LEVEL="$opt_level" \
         -DCOMPOSITE_DIR="$out/composite-src" -DGXRUNTIME_DIR="$recompcore/GXRuntime" \
         -DABI_DIR="$recompcore/Source/Core/Core/PowerPC/StaticRecomp"
