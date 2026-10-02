@@ -7318,8 +7318,20 @@ int main(int argc, char** argv) {
         getenv("BLUEWAKE_RETURN_CENSUS") != NULL;
     g_frame_timing_enabled = getenv("BLUEWAKE_FRAME_TIMING") != NULL;
     g_perf_log_enabled = getenv("BLUEWAKE_PERF_LOG") != NULL;
-    g_wall_pace_enabled = getenv("BLUEWAKE_WALL_PACE") != NULL &&
-                          strcmp(getenv("BLUEWAKE_WALL_PACE"), "0") != 0;
+    const char* wall_pace = getenv("BLUEWAKE_WALL_PACE");
+#if defined(__linux__)
+    // Linux defaults to what every Apple entry point sets: pace guest time to
+    // the wall clock in rendered runs. Without it guest time dilates whenever
+    // the render path is slower than full speed, and the audio path then
+    // produces samples at the wrong rate (the stretcher masked that with
+    // crunch). Headless runs stay unpaced: training and benches fast-run.
+    if (aurora_enabled)
+        g_wall_pace_enabled = wall_pace == NULL || strcmp(wall_pace, "0") != 0;
+    else
+        g_wall_pace_enabled = wall_pace != NULL && strcmp(wall_pace, "0") != 0;
+#else
+    g_wall_pace_enabled = wall_pace != NULL && strcmp(wall_pace, "0") != 0;
+#endif
     g_async_draw_done = getenv("BLUEWAKE_ASYNC_DRAW_DONE") == NULL ||
                         strcmp(getenv("BLUEWAKE_ASYNC_DRAW_DONE"), "0") != 0;
     g_input_log_enabled = getenv("BLUEWAKE_INPUT_LOG") != NULL &&

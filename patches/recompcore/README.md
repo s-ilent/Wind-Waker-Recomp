@@ -18,3 +18,8 @@ Aurora fork (a `wgpu::VertexBufferLayout` designated initializer written out of 
 which GCC rejects and MSVC does not) and is recorded here for the companion RecompCore pull request.
 Until that lands and `RECOMPCORE_SHA` is bumped, a Linux Builder run stops at the pinned-source check
 in `bw_fetch_game_sources` with `ref/recompcore` carrying the same one-line change locally.
+
+0114 is newer than the pinned fork and is not in it yet, like 0113: it moves SDL's joystick, gamepad and sensor
+enumeration onto SDL's own thread (SDL_HINT_JOYSTICK_THREAD), which otherwise runs inside SDL_PumpEvents on the
+presenting thread and has held the game for seconds at a time on desktops with many HID devices. Recorded here for
+the companion RecompCore pull request.

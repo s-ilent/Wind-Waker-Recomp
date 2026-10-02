@@ -139,6 +139,8 @@ fi
 BLUEWAKE_ROOT="$out/game" \\
 BLUEWAKE_DOL="$out/game/main.dol" \\
 BLUEWAKE_RELS_DIR="$out/game/rels" \\
+BLUEWAKE_WALL_PACE=1 \\
+BLUEWAKE_DSP_MODE=hle \\
 BLUEWAKE_DSP_IROM="$recompcore/Data/Sys/GC/dsp_rom.bin" \\
 BLUEWAKE_DSP_COEF="$recompcore/Data/Sys/GC/dsp_coef.bin" \\
 exec ./bluewake_host "\$PWD/$PROFILE_MODULE" "\$@"

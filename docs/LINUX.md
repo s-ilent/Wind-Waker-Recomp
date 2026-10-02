@@ -26,7 +26,6 @@ revision 0). Nothing in the repository or the build downloads game data.
 - **Local optimization training** (`profile_train`): supported — the Builder
   trains a profile from your own disc the same way the Mac flow does (clang
   and `llvm-profdata` required; the profiled builds compile with clang).
-  Without it the game plays below full speed.
 - **A packaged release**: the app runs from the build directory with the
   generated launcher; there is no installer yet.
   [Dusklight](https://github.com/TwilitRealm/dusklight) ships Linux AppImages
@@ -43,6 +42,23 @@ revision 0). Nothing in the repository or the build downloads game data.
   inside Dawn's device destruction (wl_proxy calls on a dead connection), so
   on Linux the host saves and closes everything, then leaves the device to
   process exit. Saves and settings are unaffected.
+
+## Pacing and sound
+
+The launcher sets what the Apple launchers always have: the guest clock is
+held to the display's 59.94 Hz wall time (`BLUEWAKE_WALL_PACE=1`) and the
+sound chip runs Dolphin's high-level DSP (`BLUEWAKE_DSP_MODE=hle`). With the
+low-level donor DSP the emulation thread instead interprets the DSP program
+itself, which in heavy scenes costs more than the frame budget — measured
+10.7 retraces a second against 43.9 with HLE — and dilated guest time makes
+the audio path stretch and starve, which is heard as buzzing. `An
+alternative `BLUEWAKE_DSP_MODE=lle` restores the authentic donor route for
+digest verification; it is a testing mode, not a playing one.
+
+For quick load tests, save and restore whole-run states:
+`BLUEWAKE_SAVE_STATE=/path/state@retrace` snapshots mid-run, and
+`BLUEWAKE_LOAD_STATE=/path/state` boots straight into it (set the retrace cap
+past the state's own retrace count).
 
 ## Build it yourself
 
