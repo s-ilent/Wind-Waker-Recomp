@@ -6754,8 +6754,15 @@ int main(int argc, char** argv) {
 #endif
         const AuroraBackendConfig aurora_config = {
             .app_name = "BlueWake",
-            .window_width = 960u,
-            .window_height = 720u,
+            // BLUEWAKE_WINDOW_WIDTH/HEIGHT override the default window size
+            // (the GX framebuffer defaults to the window's pixels, so this is
+            // also how render cost is measured at other sizes).
+            .window_width = (u32)(getenv("BLUEWAKE_WINDOW_WIDTH")
+                                      ? atoi(getenv("BLUEWAKE_WINDOW_WIDTH"))
+                                      : 960u),
+            .window_height = (u32)(getenv("BLUEWAKE_WINDOW_HEIGHT")
+                                       ? atoi(getenv("BLUEWAKE_WINDOW_HEIGHT"))
+                                       : 720u),
             .vsync = vsync,
             .allow_texture_dumps = false,
             .info_logging = true,

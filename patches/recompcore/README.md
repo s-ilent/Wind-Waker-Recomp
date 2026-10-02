@@ -23,3 +23,8 @@ in `bw_fetch_game_sources` with `ref/recompcore` carrying the same one-line chan
 enumeration onto SDL's own thread (SDL_HINT_JOYSTICK_THREAD), which otherwise runs inside SDL_PumpEvents on the
 presenting thread and has held the game for seconds at a time on desktops with many HID devices. Recorded here for
 the companion RecompCore pull request.
+
+0115, like 0113 and 0114, is newer than the pinned fork: it lets the frame pacing engage at Smooth Motion 120 under
+sustained overload. The overload signals were discarded at kMaxSteps, so a scene or desktop that kept the render
+worker behind slowed the game itself to two thirds speed instead of dropping in-between frames. Recorded here for
+the companion RecompCore pull request.

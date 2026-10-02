@@ -124,11 +124,20 @@ int main(void) {
     assert(remove(path) == 0);
 
     assert(setenv("HOME", directory, 1) == 0);
+    assert(unsetenv("XDG_DATA_HOME") == 0);
     assert(bluewake_card_runtime_open(NULL));
     char default_path[512];
+#ifdef __APPLE__
     assert(snprintf(default_path, sizeof default_path,
                     "%s/Library/Application Support/BlueWake/GZLE01.card",
                     directory) < (int)sizeof default_path);
+#else
+    // Linux stores the card in the XDG data home; the test's HOME is a clean
+    // scratch directory, so the default resolves under .local/share.
+    assert(snprintf(default_path, sizeof default_path,
+                    "%s/.local/share/BlueWake/GZLE01.card",
+                    directory) < (int)sizeof default_path);
+#endif
     assert(strcmp(bluewake_card_runtime_path(), default_path) == 0);
     bluewake_card_runtime_close();
     assert(access(default_path, F_OK) == 0);

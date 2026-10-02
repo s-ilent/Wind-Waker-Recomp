@@ -33,6 +33,11 @@ revision 0). Nothing in the repository or the build downloads game data.
 - **Use the native Wayland session.** Forcing `SDL_VIDEODRIVER=x11` hangs in
   Xlib window creation with the DSP build (blocked in `XIfEvent`); the same
   binary runs correctly on Wayland.
+- **Smooth Motion never slows the game.** Under a sustained render load
+  (a heavy scene, a busy desktop), the 120 Hz mode now drops in-between
+  frames — 120 to 60 to 30 shown — instead of slowing the game's own rate;
+  it restores them after the load passes. `DOL_AURORA_FRAME_INTERP_PACING=0`
+  restores the old never-drop behavior.
 - **VSync is off by default on Linux.** On KDE Wayland, a FIFO-presenting
   surface's frame callbacks arrive at a fraction of the display rate (measured
   ~20/s on a 120 Hz panel), and the game's clock paces to its presents — the

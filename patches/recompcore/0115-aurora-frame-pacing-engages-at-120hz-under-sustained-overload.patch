@@ -1,0 +1,36 @@
+diff --git a/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp b/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
+index 331d581..c4d8773 100644
+--- a/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
++++ b/GXRuntime/graphics/aurora/lib/gfx/frame_interp.cpp
+@@ -1826,9 +1826,10 @@ static void pace_steps() {
+   static constexpr uint64_t kSettle = 4; // game frames between drops
+   static constexpr uint64_t kSoon = 300; // an overload within 10 s of coming back
+   // DOL_AURORA_FRAME_INTERP_PACING: 0 never lowers them, 1 lowers 120 Hz's
+-  // too. Unset, only 60 Hz's are: 120 Hz stays 120, where a drop to 60 for a
+-  // stall of a few frames, over by the time it dropped, was felt more than the
+-  // stall.
++  // too. Unset, 60 Hz's pace as they always have, and 120 Hz's pace once the
++  // overload is sustained: a stall recovered before the drop landed felt worse
++  // than the stall, but a load that holds for seconds — a heavy scene, a busy
++  // desktop — must cost presentation frames, never the game's own rate.
+   static const int setting = [] {
+     const char* env = std::getenv("DOL_AURORA_FRAME_INTERP_PACING");
+     return env != nullptr && env[0] != '\0' ? (env[0] != '0' ? 1 : 0) : -1;
+@@ -1836,13 +1837,14 @@ static void pace_steps() {
+   auto& p = g_pacing;
+   ++p.frame;
+   const int wanted = g_steps.load(std::memory_order_relaxed);
+-  const bool pacing = setting == 1 || (setting < 0 && wanted < kMaxSteps);
+-  const bool overloaded = g_overloaded.exchange(false, std::memory_order_relaxed) && pacing;
++  const bool overloaded = g_overloaded.exchange(false, std::memory_order_relaxed) != 0;
+   p.recent = (p.recent << 1) | (overloaded ? 1u : 0u);
+   const bool sustained = std::popcount(p.recent & 0xFFu) >= 3;
++  const bool pacing =
++      setting != 0 && (setting == 1 || wanted < kMaxSteps || sustained);
+   if (wanted != p.wanted) {
+     p = Pacing{.frame = p.frame, .wanted = wanted, .budget = wanted, .calmNeeded = kCalmStart};
+-  } else if (sustained) {
++  } else if (sustained && pacing) {
+     p.calm = 0;
+     if (p.budget > 0 && p.frame - p.lastDrop >= kSettle) {
+       if (p.lastRaise != 0 && p.frame - p.lastRaise < kSoon)
